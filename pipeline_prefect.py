@@ -1,6 +1,7 @@
 import argparse
 import subprocess  # nosec B404
 import sys
+from pathlib import Path
 
 from prefect import flow, get_run_logger, task
 
@@ -12,7 +13,7 @@ from model_pipeline import (
     train_model,
 )
 
-CODE_FILES = ["model_pipeline.py", "main.py", "pipeline_prefect.py"]
+CODE_FILES = ["model_pipeline.py", "main.py", "pipeline_prefect.py", "app.py"]
 DATA_FILE = "Churn_Modelling.csv"
 MODEL_FILE = "classifier.joblib"
 
@@ -102,6 +103,15 @@ def predict(model):
     return result
 
 
+@task(name="launch-api")
+def launch_api():
+    """Start the FastAPI server (stop it with Ctrl + C)."""
+    logger = get_run_logger()
+    logger.info("API docs: http://127.0.0.1:8000/docs")
+    command = [sys.executable, "-m", "uvicorn", "app:app", "--port", "8000"]
+    subprocess.run(command)  # nosec B603
+
+
 # ---------- FLOWS ----------
 @flow(name="install", log_prints=True)
 def flow_install():
@@ -135,6 +145,13 @@ def flow_predict():
     predict(load())
 
 
+@flow(name="api", log_prints=True)
+def flow_api():
+    if not Path(MODEL_FILE).exists():
+        flow_train()
+    launch_api()
+
+
 @flow(name="all", log_prints=True)
 def flow_all():
     install_dependencies()
@@ -151,6 +168,7 @@ FLOWS = {
     "train": flow_train,
     "evaluate": flow_evaluate,
     "predict": flow_predict,
+    "api": flow_api,
     "all": flow_all,
 }
 
